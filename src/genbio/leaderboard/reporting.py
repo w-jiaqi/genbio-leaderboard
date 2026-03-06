@@ -1,15 +1,36 @@
 """CLI and dashboard reporting tools for the leaderboard."""
 
 import argparse
+import hashlib
+import importlib.util
 import json
+import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+
+import numpy as np
 import pandas as pd
 
 
-# Submission directory path
-SUBMISSION_DIR = Path(__file__).parent.parent.parent.parent / "submissions" 
+# Submissions stored globally so all agent workspaces share one leaderboard
+SUBMISSION_DIR = Path.home() / ".genbio_leaderboard" / "submissions"
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+
+def _get_git_commit_hash() -> Optional[str]:
+    """Return the short git commit hash of HEAD, or None if not in a repo."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
 
 
 # Storage functions
@@ -21,6 +42,9 @@ def save_submission(
     metrics: Dict[str, float],
     name: str,
     description: str,
+    agent: str = "unknown",
+    tracking_id: Optional[str] = None,
+    commit_hash: Optional[str] = None,
 ) -> str:
     """
     Save a submission to disk.
@@ -32,26 +56,58 @@ def save_submission(
         metrics: Dictionary of metric names and values
         name: Submission name
         description: Submission description
+        agent: Agent identifier, e.g. "codex", "claude"
+        tracking_id: Optional external identifier for run tracking
+        commit_hash: Optional git commit hash (auto-detected if None)
 
     Returns:
         Path to the saved submission file
     """
+    if commit_hash is None:
+        commit_hash = _get_git_commit_hash()
+
     # Create directory structure
-    submission_dir = SUBMISSION_DIR / "genbio-leaderboard/submissions" / dataset / fold / user
+    submission_dir = SUBMISSION_DIR / dataset / fold / user
     submission_dir.mkdir(parents=True, exist_ok=True)
 
     # Create timestamp
     timestamp = datetime.now().isoformat()
 
     # Create submission data
+    metrics_payload = dict(metrics)
+    content_payload = {
+        "user": user,
+        "dataset": dataset,
+        "fold": fold,
+        "metrics": metrics_payload,
+        "name": name,
+        "description": description,
+        "agent": agent,
+        "tracking_id": tracking_id,
+    }
+    content_hash = hashlib.sha256(
+        json.dumps(content_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    submission_hash = hashlib.sha256(
+        json.dumps(
+            {"timestamp": timestamp, **content_payload},
+            sort_keys=True, separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
     submission_data = {
         "timestamp": timestamp,
         "user": user,
         "dataset": dataset,
         "fold": fold,
-        "metrics": metrics,
+        "metrics": metrics_payload,
         "name": name,
         "description": description,
+        "agent": agent,
+        "tracking_id": tracking_id,
+        "commit_hash": commit_hash,
+        "content_hash": content_hash,
+        "submission_hash": submission_hash,
     }
 
     # Save to file
@@ -62,6 +118,30 @@ def save_submission(
         json.dump(submission_data, f, indent=2)
 
     return str(filepath)
+
+
+def record_cv_score(
+    dataset: str,
+    fold: str,
+    user: str,
+    metric_name: str,
+    cv_score: float,
+    name: str,
+    description: str = "",
+    agent: str = "unknown",
+    commit_hash: Optional[str] = None,
+) -> str:
+    """Record a CV score without evaluating on the test set."""
+    metrics = {
+        "primary_metric": metric_name,
+        metric_name: cv_score,
+        "record_type": "cv",
+    }
+    return save_submission(
+        dataset=dataset, fold=fold, user=user, metrics=metrics,
+        name=name, description=description, agent=agent,
+        tracking_id=None, commit_hash=commit_hash,
+    )
 
 
 def load_submissions(
@@ -82,7 +162,7 @@ def load_submissions(
     """
     submissions = []
 
-    base_dir = Path(SUBMISSION_DIR) / "genbio-leaderboard/submissions" / dataset / fold
+    base_dir = SUBMISSION_DIR / dataset / fold
 
     if not base_dir.exists():
         return submissions
@@ -177,9 +257,9 @@ def display_leaderboard(dataset: str, fold: str):
     print(f"\n{'='*100}")
     print(f"Leaderboard: {dataset} (Fold {fold})")
     print(f"Primary Metric: {primary_metric}")
-    print(f"{'='*100}")
-    print(f"{'Rank':<6} {'User':<20} {'Name':<25} {'Score':<12} {'Timestamp':<30}")
-    print(f"{'-'*100}")
+    print(f"{'='*110}")
+    print(f"{'Rank':<6} {'User':<20} {'Name':<25} {'Score':<12} {'Commit':<10} {'Timestamp':<30}")
+    print(f"{'-'*110}")
 
     # Print entries
     for rank, entry in enumerate(leaderboard_data, 1):
@@ -188,7 +268,8 @@ def display_leaderboard(dataset: str, fold: str):
         score = entry['metrics'][primary_metric]
         timestamp = entry['timestamp'][:19]  # Remove microseconds
 
-        print(f"{rank:<6} {user:<20} {name:<25} {score:<12.6f} {timestamp:<30}")
+        commit = entry.get('commit_hash', '--') or '--'
+        print(f"{rank:<6} {user:<20} {name:<25} {score:<12.6f} {commit:<10} {timestamp:<30}")
 
     print(f"{'='*100}\n")
 
@@ -209,9 +290,9 @@ def display_history(dataset: str, fold: str, user: str):
     print(f"\n{'='*120}")
     print(f"Submission History: {user} - {dataset} (Fold {fold})")
     print(f"Primary Metric: {primary_metric}")
-    print(f"{'='*120}")
-    print(f"{'#':<4} {'Name':<25} {'Timestamp':<22} {primary_metric:<12} {'Change':<10} {'Other Metrics'}")
-    print(f"{'-'*120}")
+    print(f"{'='*130}")
+    print(f"{'#':<4} {'Name':<25} {'Commit':<10} {'Timestamp':<22} {primary_metric:<12} {'Change':<10} {'Other Metrics'}")
+    print(f"{'-'*130}")
 
     # Print entries
     prev_score = None
@@ -234,11 +315,12 @@ def display_history(dataset: str, fold: str, user: str):
                 other_metrics.append(f"{key}={value:.4f}")
         other_metrics_str = ", ".join(other_metrics)
 
-        print(f"{idx:<4} {name:<25} {timestamp:<22} {score:<12.6f} {change_str:<10} {other_metrics_str}")
+        commit = submission.get('commit_hash', '--') or '--'
+        print(f"{idx:<4} {name:<25} {commit:<10} {timestamp:<22} {score:<12.6f} {change_str:<10} {other_metrics_str}")
 
         prev_score = score
 
-    print(f"{'='*120}")
+    print(f"{'='*130}")
 
     # Show improvement summary
     if len(user_submissions) > 1:
@@ -268,7 +350,7 @@ def export_benchmark_data(
     Returns:
         Path to the exported CSV file
     """
-    base_dir = SUBMISSION_DIR / "genbio-leaderboard/submissions"
+    base_dir = SUBMISSION_DIR
 
     if not base_dir.exists():
         raise ValueError(f"Submissions directory not found: {base_dir}")
@@ -302,6 +384,96 @@ def export_benchmark_data(
     return output_file
 
 
+# Workspace init
+
+def init_workspace(dataset: str, user: str, agent: str, output_dir: str) -> str:
+    """Create a fresh agent workspace directory with template files."""
+    out = Path(output_dir)
+    if out.exists() and any(out.iterdir()):
+        raise FileExistsError(f"Directory {out} already exists and is not empty")
+
+    template_dir = PACKAGE_ROOT / "workspace_template"
+    if not template_dir.exists():
+        raise FileNotFoundError(
+            f"Workspace template not found at {template_dir}. "
+            "Make sure the genbio-leaderboard package is installed correctly."
+        )
+
+    out.mkdir(parents=True, exist_ok=True)
+
+    for src_file in template_dir.iterdir():
+        if src_file.name == "README.md":
+            file_content = src_file.read_text()
+            file_content = file_content.replace("<DATASET>", dataset)
+            file_content = file_content.replace("<USER>", user)
+            file_content = file_content.replace("<AGENT>", agent)
+            (out / src_file.name).write_text(file_content)
+        else:
+            shutil.copy2(src_file, out / src_file.name)
+
+    subprocess.run(["git", "init"], cwd=str(out), capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=str(out), capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", f"Initial workspace for {dataset}"],
+        cwd=str(out), capture_output=True,
+    )
+
+    return str(out)
+
+
+# Test evaluation
+
+def evaluate_on_test(
+    dataset: str, fold: str, user: str, agent: str,
+    workspace_dir: str, commit: Optional[str] = None,
+) -> None:
+    """Run the agent's solution on the held-out test set and submit."""
+    from genbio.leaderboard.main import BenchmarkTask
+
+    ws = Path(workspace_dir).resolve()
+    solution_path = ws / "solution.py"
+
+    if commit:
+        result = subprocess.run(
+            ["git", "show", f"{commit}:solution.py"],
+            capture_output=True, text=True, cwd=str(ws),
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Cannot checkout solution.py from {commit}: {result.stderr}")
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, prefix="solution_")
+        tmp.write(result.stdout)
+        tmp.close()
+        solution_path = Path(tmp.name)
+
+    spec = importlib.util.spec_from_file_location("_solution", str(solution_path))
+    if spec is None or spec.loader is None:
+        raise ValueError(f"Cannot load {solution_path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    if not hasattr(mod, "build_and_predict"):
+        raise ValueError(f"{solution_path} must define build_and_predict(train_data, test_data)")
+    build_and_predict = mod.build_and_predict
+
+    task = BenchmarkTask(name=dataset, fold=fold, user=user)
+    train, test = task.setup()
+
+    np.random.seed(0)
+    preds = build_and_predict(train, test)
+
+    commit_hash = commit or _get_git_commit_hash()
+    task.submit(
+        preds,
+        name=f"test-eval-{commit_hash or 'HEAD'}",
+        description=f"Test evaluation from commit {commit_hash or 'HEAD'}",
+        agent=agent,
+        tracking_id=f"test-eval-{commit_hash or 'HEAD'}",
+    )
+
+    if commit:
+        solution_path.unlink(missing_ok=True)
+
+
 # CLI entry point
 
 def cli():
@@ -329,11 +501,54 @@ def cli():
         help='Output CSV filename (default: benchmark_export.csv)'
     )
 
+    # Init command
+    init_parser = subparsers.add_parser('init', help='Create a fresh agent workspace')
+    init_parser.add_argument('--dataset', required=True, help='Dataset name')
+    init_parser.add_argument('--user', required=True, help='User identifier')
+    init_parser.add_argument('--agent', default='codex', help='Agent identifier')
+    init_parser.add_argument('--dir', required=True, help='Output directory for the workspace')
+    # Record command
+    record_parser = subparsers.add_parser('record', help='Record a CV score (for agent use)')
+    record_parser.add_argument('--dataset', required=True, help='Dataset name')
+    record_parser.add_argument('--fold', default='0', help='Fold identifier')
+    record_parser.add_argument('--user', required=True, help='User identifier')
+    record_parser.add_argument('--metric', required=True, help='Metric name (e.g. f1_macro)')
+    record_parser.add_argument('--score', required=True, type=float, help='CV score value')
+    record_parser.add_argument('--name', required=True, help='Short name for this run')
+    record_parser.add_argument('--description', default='', help='Description')
+    record_parser.add_argument('--agent', default='unknown', help='Agent identifier')
+    # Evaluate command
+    evaluate_parser = subparsers.add_parser('evaluate', help='Run solution on test set (post-agent)')
+    evaluate_parser.add_argument('--dataset', required=True, help='Dataset name')
+    evaluate_parser.add_argument('--fold', default='0', help='Fold identifier')
+    evaluate_parser.add_argument('--user', required=True, help='User identifier')
+    evaluate_parser.add_argument('--agent', default='codex', help='Agent identifier')
+    evaluate_parser.add_argument('--workspace', required=True, help='Path to agent workspace')
+    evaluate_parser.add_argument('--commit', default=None, help='Git commit hash (default: HEAD)')
+
     args = parser.parse_args()
-    if args.command == 'leaderboard':
+    if args.command == 'init':
+        ws_path = init_workspace(args.dataset, args.user, args.agent, args.dir)
+        print(f"Workspace created at: {ws_path}")
+        print(f"Give your agent: 'Work in {ws_path}. Read README.md.'")
+    elif args.command == 'leaderboard':
         display_leaderboard(args.dataset, args.fold)
     elif args.command == 'history':
         display_history(args.dataset, args.fold, args.user)
+    elif args.command == 'record':
+        fp = record_cv_score(
+            dataset=args.dataset, fold=args.fold, user=args.user,
+            metric_name=args.metric, cv_score=args.score,
+            name=args.name, description=args.description, agent=args.agent,
+        )
+        commit = _get_git_commit_hash() or '--'
+        print(f"Recorded: {args.name} | {args.metric}={args.score:.4f} | commit={commit}")
+        print(f"Saved to: {fp}")
+    elif args.command == 'evaluate':
+        evaluate_on_test(
+            dataset=args.dataset, fold=args.fold, user=args.user,
+            agent=args.agent, workspace_dir=args.workspace, commit=args.commit,
+        )
     elif args.command == 'export':
         output_file = export_benchmark_data(
             output_file=args.output,

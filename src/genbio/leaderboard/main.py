@@ -18,6 +18,18 @@ class BenchmarkTask:
         self._test_data = data['test']
         return data['train'], data['test']
 
+    def setup_train(self):
+        """Load only the training dataset (test set is never exposed).
+
+        Use this when the agent should not have access to the test set,
+        e.g. during iterative exploration where the agent evaluates via
+        cross-validation on training data only.
+        """
+        module = _load_dataset_module(self.name, 'load')
+        data = module.load(self.fold)
+        self._test_data = data['test']
+        return data['train']
+
     def evaluate(self, preds, targets):
         if not hasattr(self, '_test_data'):
             raise ValueError("Must call setup() before evaluate()")
@@ -32,7 +44,8 @@ class BenchmarkTask:
                 print(f"  {key}: {value:.6f}")
         return results
 
-    def submit(self, preds, name=None, description=None) -> None:
+    def submit(self, preds, name=None, description=None,
+               agent="unknown", tracking_id=None) -> None:
         """Calls evaluate(preds, _test_data) and submits the results.
 
         Note:
@@ -42,6 +55,8 @@ class BenchmarkTask:
             preds (pd.DataFrame): DataFrame containing your predictions in the format required by evaluate().
             name (str): Name for the submission.
             description (str): Description for the submission.
+            agent (str): Agent identifier (e.g. "codex", "claude").
+            tracking_id (str | None): Optional run identifier for tracking.
 
         Returns:
             None.
@@ -67,6 +82,8 @@ class BenchmarkTask:
                 name=name,
                 description=description,
                 metrics=results,
+                agent=agent,
+                tracking_id=tracking_id,
             )
             print(f"\nSubmission saved to: {filepath}")
 
