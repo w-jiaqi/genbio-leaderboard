@@ -11,6 +11,11 @@ pip install .
 
 ### Usage
 
+Available dataset names include:
+- `RNA/translation-efficiency-muscle`
+- `expression/cell-type-classification-segerstolpe`
+- `expression/single-cell-perturbations-openproblems`
+
 #### Python SDK
 The main functions are:
 - `setup(name, fold, user)`: Select a dataset and fold, and provide a username.
