@@ -1,0 +1,35 @@
+import pandas as pd
+from datasets import load_dataset
+
+
+def load_task(data_dir: str, fold_id: str) -> dict[str, pd.DataFrame]:
+    """Load a nucleotide transformer downstream task from HuggingFace.
+
+    Args:
+        data_dir: Subdirectory name on HuggingFace (e.g. "H3", "splice_sites_all").
+        fold_id: Must be "0" -- these datasets have a single fixed train/test split.
+
+    Returns:
+        dict with keys 'train' and 'test', each a DataFrame with columns
+        'sequence', 'name', 'labels', and 'task'.
+    """
+    if fold_id != "0":
+        raise ValueError(
+            f"nucleotide_transformer tasks have a single fixed split; "
+            f"only fold '0' is supported, got '{fold_id}'"
+        )
+
+    ds_name = "InstaDeepAI/nucleotide_transformer_downstream_tasks"
+
+    train_df = (
+        load_dataset(ds_name, data_dir=data_dir, split="train")
+        .to_pandas()
+        .rename(columns={"label": "labels"})
+    )
+    test_df = (
+        load_dataset(ds_name, data_dir=data_dir, split="test")
+        .to_pandas()
+        .rename(columns={"label": "labels"})
+    )
+
+    return {"train": train_df, "test": test_df}
