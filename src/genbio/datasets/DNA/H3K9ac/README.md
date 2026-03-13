@@ -1,14 +1,14 @@
 # H3K9ac Histone Mark Classification
 
 Name: DNA/H3K9ac
-Input: 500bp DNA sequence
+Input: 1000bp DNA sequence
 Target: Binary (0 or 1)
 Primary Metric: MCC (Matthews Correlation Coefficient)
 Labels: 2
 
 | Fold ID | Train Size | Test Size |
 |---------|------------|-----------|
-| 0       | 25,003     | 2,779     |
+| 0       | 23,274     | 1,004     |
 
 ## Usage
 

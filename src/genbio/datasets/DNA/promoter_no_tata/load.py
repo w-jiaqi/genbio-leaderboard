@@ -3,7 +3,7 @@ from genbio.datasets.DNA._load_utils import load_task
 
 
 def load(fold_id: str) -> dict[str, pd.DataFrame]:
-    """Load the non-TATA promoter classification dataset.
+    """Load the non-TATA promoter classification dataset (revised).
 
     Args:
         fold_id: Must be "0" (single fixed train/test split).

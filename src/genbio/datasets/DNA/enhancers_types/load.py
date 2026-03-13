@@ -3,13 +3,13 @@ from genbio.datasets.DNA._load_utils import load_task
 
 
 def load(fold_id: str) -> dict[str, pd.DataFrame]:
-    """Load the enhancer type classification (3-class: non-enhancer, weak, strong) dataset.
+    """Load the enhancer type classification (3-class: non-enhancer, weak, strong) dataset (revised).
 
     Args:
         fold_id: Must be "0" (single fixed train/test split).
 
     Returns:
         dict with keys 'train' and 'test', each a DataFrame with columns
-        'sequence' (200bp DNA), 'name', and 'labels' (0, 1, or 2).
+        'sequence' (400bp DNA), 'name', and 'labels' (0, 1, or 2).
     """
     return load_task("enhancers_types", fold_id)

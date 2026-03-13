@@ -1,14 +1,14 @@
 # H3K4me1 Histone Mark Classification
 
 Name: DNA/H3K4me1
-Input: 500bp DNA sequence
+Input: 1000bp DNA sequence
 Target: Binary (0 or 1)
 Primary Metric: MCC (Matthews Correlation Coefficient)
 Labels: 2
 
 | Fold ID | Train Size | Test Size |
 |---------|------------|-----------|
-| 0       | 28,509     | 3,168     |
+| 0       | 30,000     | 3,000     |
 
 ## Usage
 

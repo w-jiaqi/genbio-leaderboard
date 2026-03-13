@@ -1,21 +1,21 @@
-# H3K79me3 Histone Mark Classification
+# H2AFZ Histone Mark Classification
 
-Name: DNA/H3K79me3
-Input: 500bp DNA sequence
+Name: DNA/H2AFZ
+Input: 1000bp DNA sequence
 Target: Binary (0 or 1)
 Primary Metric: MCC (Matthews Correlation Coefficient)
 Labels: 2
 
 | Fold ID | Train Size | Test Size |
 |---------|------------|-----------|
-| 0       | 25,953     | 2,884     |
+| 0       | 30,000     | 3,000     |
 
 ## Usage
 
 ```python
 import genbio.leaderboard as gl
 
-task = gl.BenchmarkTask(name='DNA/H3K79me3', fold='0', user='your_name')
+task = gl.BenchmarkTask(name='DNA/H2AFZ', fold='0', user='your_name')
 train_df, test_df = task.setup()
 # train_df / test_df have columns: sequence, name, labels
 ```

@@ -1,14 +1,14 @@
 # Enhancer Type Classification
 
 Name: DNA/enhancers-types
-Input: 200bp DNA sequence
+Input: 400bp DNA sequence
 Target: Multiclass (0, 1, or 2)
 Primary Metric: MCC (Matthews Correlation Coefficient)
 Labels: 3
 
 | Fold ID | Train Size | Test Size |
 |---------|------------|-----------|
-| 0       | 14,968     | 400       |
+| 0       | 30,000     | 3,000     |
 
 ## Usage
 

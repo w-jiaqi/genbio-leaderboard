@@ -2,11 +2,17 @@ import pandas as pd
 from datasets import load_dataset
 
 
-def load_task(data_dir: str, fold_id: str) -> dict[str, pd.DataFrame]:
-    """Load a nucleotide transformer downstream task from HuggingFace.
+_DS_NAME = "InstaDeepAI/nucleotide_transformer_downstream_tasks_revised"
+
+
+def load_task(task_name: str, fold_id: str) -> dict[str, pd.DataFrame]:
+    """Load a nucleotide transformer downstream task (revised) from HuggingFace.
+
+    The revised dataset stores all 18 tasks in a single dataset with a 'task'
+    column. We load the full split then filter by task name.
 
     Args:
-        data_dir: Subdirectory name on HuggingFace (e.g. "H3", "splice_sites_all").
+        task_name: Value of the 'task' column (e.g. "H2AFZ", "splice_sites_all").
         fold_id: Must be "0" -- these datasets have a single fixed train/test split.
 
     Returns:
@@ -19,15 +25,15 @@ def load_task(data_dir: str, fold_id: str) -> dict[str, pd.DataFrame]:
             f"only fold '0' is supported, got '{fold_id}'"
         )
 
-    ds_name = "InstaDeepAI/nucleotide_transformer_downstream_tasks"
-
     train_df = (
-        load_dataset(ds_name, data_dir=data_dir, split="train")
+        load_dataset(_DS_NAME, split="train")
+        .filter(lambda x: x["task"] == task_name)
         .to_pandas()
         .rename(columns={"label": "labels"})
     )
     test_df = (
-        load_dataset(ds_name, data_dir=data_dir, split="test")
+        load_dataset(_DS_NAME, split="test")
+        .filter(lambda x: x["task"] == task_name)
         .to_pandas()
         .rename(columns={"label": "labels"})
     )

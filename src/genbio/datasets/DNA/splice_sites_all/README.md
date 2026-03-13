@@ -1,14 +1,14 @@
 # Splice Site Classification (All)
 
 Name: DNA/splice-sites-all
-Input: 400bp DNA sequence
+Input: 600bp DNA sequence
 Target: Multiclass (0, 1, or 2)
 Primary Metric: MCC (Matthews Correlation Coefficient)
 Labels: 3
 
 | Fold ID | Train Size | Test Size |
 |---------|------------|-----------|
-| 0       | 27,000     | 3,000     |
+| 0       | 30,000     | 3,000     |
 
 ## Usage
 
